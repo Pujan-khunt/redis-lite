@@ -10,14 +10,17 @@ import (
 	"strings"
 )
 
-var port = flag.Uint("port", 6379, "port for redis-lite to listen on")
+var (
+	port = flag.Uint("port", 6379, "port for redis-lite to listen on")
+	ip   = flag.String("ip", "0.0.0.0", "ip of the interface for the server to listen on")
+)
 
 func main() {
 	flag.Parse()
 
 	// TCP Address of the server
 	addr := net.TCPAddr{
-		IP:   net.ParseIP("127.0.0.1"),
+		IP:   net.ParseIP(*ip),
 		Port: int(*port),
 	}
 
@@ -48,8 +51,9 @@ func main() {
 			break
 		}
 
-		// Parse client message into command
-		cmd := strings.Split(msg[:len(msg)-1], " ")
+		// Parse client message into command handling both LF(\n) and CRLF(\r\n)
+		msg = strings.TrimSpace(msg)
+		cmd := strings.Split(msg, " ")
 
 		// Execute logic (Store, Update, Delete) based on the command
 		switch cmd[0] {
