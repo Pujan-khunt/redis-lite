@@ -48,10 +48,12 @@ func (s *Server) handleConnection(conn *net.TCPConn) {
 	defer conn.Close()
 
 	respReader := resp.NewRespReader(conn)
+	respWriter := resp.NewRespWriter(conn)
 
 	for {
 		value, err := respReader.Read()
 		if err != nil {
+			// Client disconnect
 			if err == io.EOF {
 				break
 			}
@@ -68,36 +70,37 @@ func (s *Server) handleConnection(conn *net.TCPConn) {
 		switch command {
 		case "SET":
 			if len(value.Array) != 3 {
-				fmt.Fprintf(conn, "-ERR invalid number of arguments for 'SET' command\r\n")
+				respWriter.Write(resp.RespValue{Type: resp.Error, Str: "-ERR invalid number of arguments for 'SET' command"})
 				continue
 			}
 			key, val := value.Array[1].Str, value.Array[2].Str
 			s.store.Set(key, val)
-			fmt.Fprintf(conn, "+OK\r\n")
+			respWriter.Write(resp.RespValue{Type: resp.SimpleString, Str: "OK"})
 		case "GET":
 			if len(value.Array) != 2 {
-				fmt.Fprintf(conn, "-ERR invalid number of arguments for 'GET' command\r\n")
+				respWriter.Write(resp.RespValue{Type: resp.Error, Str: "-ERR invalid number of arguments for 'GET' command\r\n"})
 				continue
 			}
 			key := value.Array[1].Str
 			if val, ok := s.store.Get(key); ok {
-				fmt.Fprintf(conn, "%s\r\n", val)
+				respWriter.Write(resp.RespValue{Type: resp.BulkString, Str: val})
 			} else {
-				fmt.Fprintf(conn, "$-1\r\n")
+				respWriter.Write(resp.RespValue{Type: resp.BulkString, Str: ""})
 			}
 		case "DEL":
 			if len(value.Array) != 2 {
-				fmt.Fprintf(conn, "-ERR invalid number of arguments for 'DEL' command\r\n")
+				respWriter.Write(resp.RespValue{Type: resp.Error, Str: "-ERR invalid number of arguments for 'DEL' command\r\n"})
 				continue
 			}
 			key := value.Array[1].Str
 			if ok := s.store.Del(key); ok {
-				fmt.Fprintf(conn, ":1\r\n")
+				respWriter.Write(resp.RespValue{Type: resp.Integer, Num: 1})
 			} else {
-				fmt.Fprintf(conn, "-ERR failed to delete key")
+				respWriter.Write(resp.RespValue{Type: resp.Error, Str: "-ERR failed to delete key"})
 			}
 		default:
-			fmt.Fprintf(conn, "-ERR unknown command '%s'\r\n", value.Array[0].Str)
+			msg := fmt.Sprintf("-ERR unknown command '%s'", value.Array[0].Str)
+			respWriter.Write(resp.RespValue{Type: resp.Error, Str: msg})
 		}
 	}
 }
