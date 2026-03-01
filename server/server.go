@@ -1,21 +1,13 @@
 package server
 
 import (
-	"bufio"
-	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net"
-	"strings"
 
+	"github.com/Pujan-khunt/redis-lite/resp"
 	"github.com/Pujan-khunt/redis-lite/storage"
-)
-
-var (
-	ErrClientDisconnected error = errors.New("server: client disconnected")
-	ErrInvalidNumArgs     error = errors.New("server: invalid number of arguments")
-	ErrKeyNotExists       error = errors.New("server: key doesn't exist")
-	ErrInvalidCommand     error = errors.New("server: invalid command")
 )
 
 type Server struct {
@@ -40,55 +32,72 @@ func (s *Server) ListenAndServe() error {
 	}
 	defer listener.Close()
 
-	fmt.Printf("Listening for connections on %s:%d\n", s.addr.IP, s.addr.Port)
+	fmt.Printf("Listening for connections on %s:%d\r\n", s.addr.IP, s.addr.Port)
 
-	conn, err := listener.AcceptTCP()
-	if err != nil {
-		log.Fatal(err)
+	for {
+		conn, err := listener.AcceptTCP()
+		if err != nil {
+			log.Fatalf("Failed to accept connection: %v\r\n", err)
+			continue
+		}
+		go s.handleConnection(conn)
 	}
-	defer conn.Close()
-
-	errCh := make(chan error)
-	go s.handleConnection(conn, errCh)
-	return <-errCh
 }
 
-func (s *Server) handleConnection(conn *net.TCPConn, errCh chan<- error) error {
+func (s *Server) handleConnection(conn *net.TCPConn) {
+	defer conn.Close()
+
+	respReader := resp.NewRespReader(conn)
+
 	for {
-		r := bufio.NewReader(conn)
-		msg, err := r.ReadString('\n')
+		value, err := respReader.Read()
 		if err != nil {
-			errCh <- ErrClientDisconnected
+			if err == io.EOF {
+				break
+			}
+			log.Println("Error parsing RESP:", err)
+			return
 		}
-
-		msg = strings.TrimSpace(msg)
-		cmd := strings.Split(msg, " ")
-
-		if len(cmd) == 0 || cmd[0] == "" {
+		// Expect command to only be a RESP positive length array
+		if value.Type != resp.Array || len(value.Array) == 0 {
 			continue
 		}
 
-		switch cmd[0] {
+		command := value.Array[0].Str
+
+		switch command {
 		case "SET":
-			if len(cmd) < 3 {
-				errCh <- ErrInvalidNumArgs
+			if len(value.Array) != 3 {
+				fmt.Fprintf(conn, "-ERR invalid number of arguments for 'SET' command\r\n")
 				continue
 			}
-			key, val := cmd[1], cmd[2]
+			key, val := value.Array[1].Str, value.Array[2].Str
 			s.store.Set(key, val)
-			fmt.Fprintf(conn, "OK\n")
+			fmt.Fprintf(conn, "+OK\r\n")
 		case "GET":
-			key := cmd[1]
+			if len(value.Array) != 2 {
+				fmt.Fprintf(conn, "-ERR invalid number of arguments for 'GET' command\r\n")
+				continue
+			}
+			key := value.Array[1].Str
 			if val, ok := s.store.Get(key); ok {
-				fmt.Fprintln(conn, val)
+				fmt.Fprintf(conn, "%s\r\n", val)
 			} else {
-				errCh <- ErrKeyNotExists
+				fmt.Fprintf(conn, "$-1\r\n")
 			}
 		case "DEL":
-			key := cmd[1]
-			s.store.Del(key)
+			if len(value.Array) != 2 {
+				fmt.Fprintf(conn, "-ERR invalid number of arguments for 'DEL' command\r\n")
+				continue
+			}
+			key := value.Array[1].Str
+			if ok := s.store.Del(key); ok {
+				fmt.Fprintf(conn, ":1\r\n")
+			} else {
+				fmt.Fprintf(conn, "-ERR failed to delete key")
+			}
 		default:
-			errCh <- ErrInvalidCommand
+			fmt.Fprintf(conn, "-ERR unknown command '%s'\r\n", value.Array[0].Str)
 		}
 	}
 }
