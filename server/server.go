@@ -5,6 +5,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"strings"
 
 	"github.com/Pujan-khunt/redis-lite/resp"
 	"github.com/Pujan-khunt/redis-lite/storage"
@@ -46,10 +47,8 @@ func (s *Server) ListenAndServe() error {
 
 func (s *Server) handleConnection(conn *net.TCPConn) {
 	defer conn.Close()
-
 	respReader := resp.NewRespReader(conn)
 	respWriter := resp.NewRespWriter(conn)
-
 	for {
 		value, err := respReader.Read()
 		if err != nil {
@@ -64,41 +63,11 @@ func (s *Server) handleConnection(conn *net.TCPConn) {
 		if value.Type != resp.Array || len(value.Array) == 0 {
 			continue
 		}
-
 		command := value.Array[0].Str
-
-		switch command {
-		case "SET":
-			if len(value.Array) != 3 {
-				respWriter.Write(resp.RespValue{Type: resp.Error, Str: "-ERR invalid number of arguments for 'SET' command"})
-				continue
-			}
-			key, val := value.Array[1].Str, value.Array[2].Str
-			s.store.Set(key, val)
-			respWriter.Write(resp.RespValue{Type: resp.SimpleString, Str: "OK"})
-		case "GET":
-			if len(value.Array) != 2 {
-				respWriter.Write(resp.RespValue{Type: resp.Error, Str: "-ERR invalid number of arguments for 'GET' command\r\n"})
-				continue
-			}
-			key := value.Array[1].Str
-			if val, ok := s.store.Get(key); ok {
-				respWriter.Write(resp.RespValue{Type: resp.BulkString, Str: val})
-			} else {
-				respWriter.Write(resp.RespValue{Type: resp.BulkString, Str: ""})
-			}
-		case "DEL":
-			if len(value.Array) != 2 {
-				respWriter.Write(resp.RespValue{Type: resp.Error, Str: "-ERR invalid number of arguments for 'DEL' command\r\n"})
-				continue
-			}
-			key := value.Array[1].Str
-			if ok := s.store.Del(key); ok {
-				respWriter.Write(resp.RespValue{Type: resp.Integer, Num: 1})
-			} else {
-				respWriter.Write(resp.RespValue{Type: resp.Error, Str: "-ERR failed to delete key"})
-			}
-		default:
+		normalizedCommand := strings.ToUpper(command)
+		if handler, exists := commandRegistry[normalizedCommand]; exists {
+			handler(value.Array, respWriter, s.store)
+		} else {
 			msg := fmt.Sprintf("-ERR unknown command '%s'", value.Array[0].Str)
 			respWriter.Write(resp.RespValue{Type: resp.Error, Str: msg})
 		}
