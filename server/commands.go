@@ -9,17 +9,15 @@ import (
 type CommandHandler = func(args []resp.RespValue, w *resp.RespWriter, store storage.Store)
 
 var commandRegistry = map[string]CommandHandler{
-	"SET": handleSET,
-	"GET": handleGET,
-	"DEL": handleDEL,
+	"SET":  handleSET,
+	"GET":  handleGET,
+	"DEL":  handleDEL,
+	"PING": handlePING,
 }
 
 func handleSET(args []resp.RespValue, w *resp.RespWriter, store storage.Store) {
 	if len(args) != 3 {
-		w.Write(resp.RespValue{
-			Type: resp.Error,
-			Str:  "-ERR invalid number of arguments for 'SET' command",
-		})
+		w.Write(resp.RespValue{Type: resp.Error, Str: "-ERR invalid number of arguments for 'SET' command"})
 		return
 	}
 	key, val := args[1].Str, args[2].Str
@@ -50,5 +48,15 @@ func handleDEL(args []resp.RespValue, w *resp.RespWriter, store storage.Store) {
 		w.Write(resp.RespValue{Type: resp.Integer, Num: 1})
 	} else {
 		w.Write(resp.RespValue{Type: resp.Error, Str: "-ERR failed to delete key"})
+	}
+}
+
+func handlePING(args []resp.RespValue, w *resp.RespWriter, store storage.Store) {
+	if len(args) == 2 && args[1].Type == resp.BulkString {
+		// PONG [arg] for PING [arg]
+		w.Write(resp.RespValue{Type: resp.BulkString, Str: args[1].Str})
+	} else {
+		// PONG for PING
+		w.Write(resp.RespValue{Type: resp.SimpleString, Str: "PONG"})
 	}
 }

@@ -3,6 +3,7 @@ package resp
 import (
 	"bufio"
 	"errors"
+	"fmt"
 	"io"
 	"strconv"
 )
@@ -33,7 +34,8 @@ func (r *RespReader) Read() (RespValue, error) {
 	case SimpleString:
 		return r.readSimpleString()
 	default:
-		return RespValue{}, errors.New("reader: unknown RESP type")
+		msg := fmt.Sprintf("unknown RESP type: %c\n", prefix)
+		return RespValue{}, errors.New(msg)
 	}
 }
 
