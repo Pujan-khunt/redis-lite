@@ -13,9 +13,12 @@ func main() {
 
 	store := storage.NewInMemoryStore()
 
-	server := server.NewServer(cfg.Host, cfg.Port, store)
+	server, err := server.NewServer(cfg.Host, cfg.Port, store, cfg.Period)
+	if err != nil {
+		log.Fatalln("Error creating server", err)
+	}
 
 	if err := server.ListenAndServe(); err != nil {
-		log.Fatal(err)
+		log.Fatalln("Error starting server", err)
 	}
 }

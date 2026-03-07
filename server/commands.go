@@ -27,7 +27,7 @@ func handleSET(args []resp.RespValue, w *resp.RespWriter, store storage.Store) {
 
 func handleGET(args []resp.RespValue, w *resp.RespWriter, store storage.Store) {
 	if len(args) != 2 {
-		w.Write(resp.RespValue{Type: resp.Error, Str: "-ERR invalid number of arguments for 'GET' command\r\n"})
+		w.Write(resp.RespValue{Type: resp.Error, Str: "-ERR invalid number of arguments for 'GET' command"})
 		return
 	}
 	key := args[1].Str
